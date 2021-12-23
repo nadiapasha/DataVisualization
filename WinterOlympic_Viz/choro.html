@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<head>
+    <!-- add title -->
+    <title>Olympic Sports Choropleth</title>
+    
+    <!-- import required libraries here -->
+
+  
+  <script type="text/javascript" src="../lib/d3.v5.min.js"></script>
+  <script type="text/javascript" src="../lib/d3-dsv.min.js"></script>
+  <script type="text/javascript" src="../lib/d3-geo-projection.v2.min.js"></script>
+  <script type="text/javascript" src="../lib/d3-legend.min.js"></script>
+  <!-- may have to remove following-->
+  <script type="text/javascript" src="../lib/d3-tip.min.js"></script>
+  <script type="text/javascript" src="../lib/topojson.v2.min.js"></script>
+
+  <!--FROM D3 GITHUB-->
+  <script type = "module">import {geoEqualEarth, geoPath} from "https://cdn.skypack.dev/d3-geo@3";</script>
+
+  <link rel="stylesheet" type="text/css" href="choropleth.css">
+    
+    <style>
+        /* define CSS rules here */
+    
+    </style>
+
+    
+</head>
+
+
+<body>
+    <!-- Add heading for the visualization -->
+    <p id = "heading">Winter Olympic Medal Count Over The Years (1924-2014)</p>
+    <!-- Create dropdown element here. Options should be added after reading in game file, they should not be created here.-->
+    <!-- Initialize a select button -->
+    <select id="gameDropdown"></select>
+
+    <!-- append visualization svg to this div-->
+    <div id="choropleth"></div>
+
+    <p id = "creator">Nadia Pasha</p>
+
+    <script>
+    
+        // enter code to define margin and dimensions for svg
+        const width = 980;
+        const height = 500;
+        const margin = 5;
+        const padding = 5;
+        const adj = 30;
+        // enter code to create svg
+        var svg = d3.select("div#choropleth").append("svg").attr("width",width).attr("height",height)
+            .style("padding", padding)
+            .style("margin", margin);
+        // enter code to create color scale
+        var color = d3.scaleQuantile().range([d3.interpolateBlues(0.1),d3.interpolateBlues(0.3),d3.interpolateBlues(0.6),d3.interpolateBlues(0.9)]);//.range(["#f2f0f7","#cbc9e2","#9e9ac8","#6a51a3"])
+
+
+        // enter code to define tooltip
+
+        var div = d3.select("body").append("div")	
+        .attr("id", "tooltip")				
+        .style("opacity", 0);
+        
+        // enter code to define projection and path required for Choropleth
+        // For grading, set the name of functions for projection and path as "projection" and "path"
+        var projection = d3.geoEqualEarth()
+                            .translate([width/2,height/2]);
+
+
+        var path = d3.geoPath()
+                    .projection(projection);
+        
+        
+        
+
+        // define any other global variables 
+        // container for map and legend
+        let choro_map = svg.append("g").attr("id","countries");
+        let legend = svg.append("g").attr("id","legend");
+
+        Promise.all([
+            // enter code to read files
+            d3.json("world_countries.json"),d3.csv("country_medal_count.csv")
+        ]).then(
+            // enter code to call ready() with required arguments
+            function(files){
+            ready(null,files[0],files[1])}
+        );
+        
+        // this function should be called once the data from files have been read
+        // world: topojson from world_countries.json
+        // gameData: data from ratings-by-country.csv
+        
+        function ready(error, world, sportData) {
+            // enter code to extract all unique games from gameData
+            // https://stackoverflow.com/questions/1960473/get-all-unique-values-in-a-javascript-array-remove-duplicates
+            function unique(value, index, self) {
+                    return self.indexOf(value) === index;
+                            };
+
+            const allGroups = [];
+            sportData.map(function(d){
+                allGroups.push(d.Sport);
+            });
+            console.log("allGroups: ",allGroups);
+            const uniqueGroups = allGroups.filter(unique).sort();
+            console.log("uniqueGroups: ",uniqueGroups);
+
+            var  all_columns  = sportData.columns;
+            console.log(all_columns);
+
+            
+
+
+
+            // enter code to append the game options to the dropdown
+            //https://www.d3-graph-gallery.com/graph/line_select.html
+
+            d3.select("#gameDropdown")
+                .selectAll('myOptions')
+     	        .data(uniqueGroups)
+                .enter()
+    	        .append('option')
+                .text(function (d) { return d; }) // text showed in the menu
+                .attr("value", function (d) { return d; }) // corresponding value returned by the button
+
+            // unique color for each country -- my code
+
+            //color.domain([d3.min(gameData,function(d){return +d["Average rating"]}),d3.max(gameData, function(d){return d["Average Rating"]})])
+            
+            // event listener for the dropdown. Update choropleth and legend when selection changes. Call createMapAndLegend() with required arguments.
+            //https://www.d3-graph-gallery.com/graph/line_select.html
+            
+            // create Choropleth with default option. Call createMapAndLegend() with required arguments.
+            
+            // get rating for Biathlon for default map
+            var default_data = sportData.filter(o=>Object.values(o).includes("Biathlon"))
+            console.log("default data: ",default_data)
+
+            // get array of rating values for Biathlon
+            var default_array = default_data.map(function(d){return +d["Medal"]});
+            default_array.sort(function(a, b){return a-b});
+            console.log("default_array: ",default_array);
+
+            color.domain(default_array);
+
+            // create deep copy of world and use that for updating world for each selection
+            const world_Biathlon = JSON.parse(JSON.stringify(world));
+            
+
+            // adding N/A for tooltip
+            for (var j= 0; j<world.features.length; j++){
+                
+                world_Biathlon.features[j].properties.value = "N/A";
+                //world_Biathlon.features[j].properties.user = "N/A";
+            };
+
+
+            // Merge both data sets
+            //Loop thru once for each data value
+            for (var i=0;i<default_data.length;i++){
+                //Grab Country name
+                var dataCountry = default_data[i].Country;
+
+                //Grab data value, and convert from string to float
+                var dataValue = parseFloat(default_data[i].Medal);
+                //var userValue = default_data[i]["Number of Users"]
+
+                //Find the corresponding country inside GeoJSON
+                for (var j = 0; j<world.features.length; j++){
+                    var jsonCountry = world.features[j].properties.name;
+
+                    if (dataCountry == jsonCountry){
+                        // Copy the data value into the JSON
+                        world_Biathlon.features[j].properties.value = dataValue;
+                        //world_Biathlon.features[j].properties.user = userValue;
+
+                        // stop looking thru the JSON
+                        break;
+                    }
+                }
+
+
+            }
+
+
+
+            // default choropleth !!!!!!!!!!!!!!!!!
+           
+            choro_map.selectAll("path")
+                .data(world_Biathlon.features)
+                .enter()
+                .append("path")
+                .attr("d",path)
+                //.style("stroke","white")
+                .style("fill",function(d){
+                    //Get data value
+                    var value = d.properties.value;
+                    //console.log("value inside fill: ", d.properties.name,value)
+                    if(value !="N/A"){
+                        // if value exists
+                        return color(value);
+                    } else {
+                        //If value is undefined
+                        return "#808080"
+                    }
+                });
+
+
+            //  DEFAULT TOOLTIP
+
+            choro_map.selectAll("path")
+                    .on("mouseover", function(d) {		
+            div.transition()		
+                .duration(200)		
+                .style("opacity", .9);		
+            div	.html("Country: "+ d.properties.name + "<br/>" 
+                                + "Sport: Biathlon" + "<br/>" 
+                                + "Medal Count: " + d.properties.value + "<br/>"
+                                //+ "Number of Users: " + d.properties.user
+                                                                )	
+                .style("left", (d3.event.pageX) + "px")		
+                .style("top", (d3.event.pageY - 28) + "px");	
+            })					
+        .on("mouseout", function(d) {		
+            div.transition()		
+                .duration(500)		
+                .style("opacity", 0);	
+        });
+
+
+            // default legend !!!!!!!!!!!
+
+            let position_array = [{pos:10,tex1:d3.quantile(default_array,0),tex2:d3.quantile(default_array,0.25),color:d3.interpolateBlues(0.1)},{pos:20,tex1:d3.quantile(default_array,0.25),tex2:d3.quantile(default_array,0.5),color:d3.interpolateBlues(0.3)},
+            {pos:30,tex1:d3.quantile(default_array,0.5),tex2:d3.quantile(default_array,0.75),color:d3.interpolateBlues(0.6)},{pos:40,tex1:d3.quantile(default_array,0.75),tex2:d3.quantile(default_array,1),color:d3.interpolateBlues(0.9)}]; 
+            legend.selectAll("text")
+                    .data(position_array)
+                    .enter()
+                    .append("text")
+                    .attr("x",860)
+                    .attr("y",function(d){return d.pos;})
+                    .text(function(d){return ((Math.round(d.tex1*100)/100)+" to "+(Math.round(d.tex2*100)/100));})
+                    .style("font-size",12);
+
+            legend.selectAll("rect")
+                    .data(position_array)
+                    .enter()
+                    .append("rect")
+                    .attr("x",845)
+                    .attr("y",function(d){return d.pos-8;})
+                    .attr("width",8)
+                    .attr("height",8)
+                    .style("fill",function(d){return d.color;});
+
+            
+            // update SELECTION !!!!!!!!!!!!!!!!!!!!!
+            d3.select("#gameDropdown").on("change", function(d) {
+                // recover the option that has been chosen
+                var selectedOption = d3.select(this).property("value")
+                // run the createMap function with this selected option
+                createMapAndLegend(world, sportData, selectedOption)
+                })
+        }
+
+        // this function should create a Choropleth and legend using the world and gameData arguments for a selectedGame
+        // also use this function to update Choropleth and legend when a different game is selected from the dropdown
+        // Mostly from Scott Murray book chapter 14 
+        function createMapAndLegend(world, sportData, selectedSport){ 
+
+            // filter gameData by selectedGame
+            //https://stackoverflow.com/questions/52387754/filter-object-by-key-values
+
+            var data = sportData.filter(o=>Object.values(o).includes(selectedSport))
+            console.log("selected sport data: ",data)
+
+
+            
+
+            // numerically sorted array of average values fo domain
+            
+            var my_array = data.map(function(d){return +d["Medal"]});
+            my_array.sort(function(a, b){return a-b});
+            console.log("my_array: ",my_array);
+
+            color.domain(my_array); 
+            
+            
+
+            console.log("extent values: ",[d3.min(data,function(d){return +d["Medal"]}),d3.max(data, function(d){return +d["Medal"]})]);
+
+            // create deep copy of world and use that for updating world for each selection
+            const world_copy = JSON.parse(JSON.stringify(world));
+            
+
+            // adding N/A for tooltip
+            for (var j= 0; j<world.features.length; j++){
+                
+                world_copy.features[j].properties.value = "N/A";
+                //world_copy.features[j].properties.user = "N/A";
+            };
+
+            // Merge both data sets
+            //Loop thru once for each data value
+            for (var i=0;i<data.length;i++){
+                //Grab Country name
+                var dataCountry = data[i].Country;
+
+                //Grab data value, and convert from string to float
+                var dataValue = parseFloat(data[i].Medal);
+                //var usersValue = +data[i]["Number of Users"];
+                
+
+                //Find the corresponding country inside GeoJSON
+                for (var j = 0; j<world.features.length; j++){
+                    // adding N/A for tooltip
+                    //world_copy.features[j].properties.value = "N/A";
+                    //world_copy.features[j].properties.user = "N/A";
+
+                    var jsonCountry = world_copy.features[j].properties.name;
+
+                    if (dataCountry == jsonCountry){
+                        // Copy the data value into the JSON
+                        world_copy.features[j].properties.value = dataValue;
+                        //world_copy.features[j].properties.user = usersValue;
+
+                        // stop looking thru the JSON
+                        break;
+                    } 
+                }
+
+
+            }
+
+            // update fill according to selection
+                svg.selectAll("path")
+                .data(world_copy.features)
+                //.trasition()
+                //.duration(1000)
+                //.append("path")
+                //.attr("d",path)
+                .style("fill", function(d){
+                    //Get data value
+                    var value = d.properties.value;
+                    //console.log("value inside fill: ", d.properties.name,value)
+                    if(value != "N/A"){
+                        // if value exists
+                        return color(value);
+                    } else {
+                        //If value is undefined
+                        return "#808080"
+                    }
+                });
+
+
+            // update legend according to selection
+
+            let position_array = [{pos:10,tex1:d3.quantile(my_array,0),tex2:d3.quantile(my_array,0.25)},{pos:20,tex1:d3.quantile(my_array,0.25),tex2:d3.quantile(my_array,0.5)},
+            {pos:30,tex1:d3.quantile(my_array,0.5),tex2:d3.quantile(my_array,0.75)},{pos:40,tex1:d3.quantile(my_array,0.75),tex2:d3.quantile(my_array,1)}]; 
+            legend.selectAll("text")
+                    .data(position_array)
+                    .text(function(d){return ((Math.round(d.tex1*100)/100)+" to "+(Math.round(d.tex2*100)/100));})
+                    
+
+            // updated tool tip
+
+            choro_map.selectAll("path")
+                    .on("mouseover", function(d) {		
+            div.transition()		
+                .duration(200)		
+                .style("opacity", .9);		
+            div	.html("Country: "+ d.properties.name + "<br/>" 
+                                + "Sport: "+ selectedSport + "<br/>" 
+                                + "Medal Count: " + d.properties.value //+ "<br/>"
+                                //+ "Number of Users: " +d.properties.user
+                                                                )	
+                .style("left", (d3.event.pageX) + "px")		
+                .style("top", (d3.event.pageY - 28) + "px");	
+            })					
+        .on("mouseout", function(d) {		
+            div.transition()		
+                .duration(500)		
+                .style("opacity", 0);	
+        });
+
+
+
+                
+        
+            
+        }
+    </script>
+
+</body>
+
+</html>
